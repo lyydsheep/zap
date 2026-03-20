@@ -89,36 +89,23 @@ func (w *Writer) Write(bs []byte) (n int, err error) {
 // writeLine writes a single line from the input, returning the remaining,
 // unconsumed bytes.
 //
-// It handles both newlines (\n) and carriage returns (\r). The key logic:
-// - Look for the first newline (\n) or carriage return (\r)
-// - If \r\n is found (Windows line endings), treat it as a single separator
-// - If \r is found alone (progress updates), flush the current line and continue
+// It handles both newlines (\n) and carriage returns (\r):
+// - \n splits the line
+// - \r splits the line (useful for progress indicators)
+// - \r\n is treated as a single separator (Windows line endings)
 func (w *Writer) writeLine(line []byte) (remaining []byte) {
-	// Find the first occurrence of either \n or \r
-	nlIdx := bytes.IndexByte(line, '\n')
-	crIdx := bytes.IndexByte(line, '\r')
-
-	// Determine which separator comes first (or if neither exists)
-	sepIdx := -1
-	sepLen := 0
-
-	if nlIdx >= 0 && (crIdx < 0 || nlIdx <= crIdx) {
-		sepIdx = nlIdx
-		sepLen = 1
-	} else if crIdx >= 0 {
-		sepIdx = crIdx
-		// Check if this is a \r\n sequence (Windows line ending)
-		if sepIdx+1 < len(line) && line[sepIdx+1] == '\n' {
-			sepLen = 2
-		} else {
-			sepLen = 1
-		}
-	}
-
+	// Find the first occurrence of either \n or \r.
+	sepIdx := bytes.IndexAny(line, "\r\n")
 	if sepIdx < 0 {
 		// If there are no newlines or carriage returns, buffer the entire string.
 		w.buff.Write(line)
 		return nil
+	}
+
+	// Determine separator length: \r\n is a single separator (Windows line ending).
+	sepLen := 1
+	if line[sepIdx] == '\r' && sepIdx+1 < len(line) && line[sepIdx+1] == '\n' {
+		sepLen = 2
 	}
 
 	// Split on the separator, buffer and flush the left.
@@ -133,9 +120,7 @@ func (w *Writer) writeLine(line []byte) (remaining []byte) {
 
 	w.buff.Write(line)
 
-	// Log empty messages in the middle of the stream so that we don't lose
-	// information when the user writes "foo\n\nbar".
-	// For carriage returns (progress updates), we also log the complete line.
+	// Log empty messages to preserve information like "foo\n\nbar".
 	w.flush(true) // allowEmpty
 
 	return remaining
