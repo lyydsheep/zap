@@ -127,12 +127,12 @@ func TestWriter(t *testing.T) {
 			},
 		},
 		{
-			desc: "carriage return creates line break",
+			desc: "carriage return resets buffer",
 			writes: []string{
 				"foo\rbar\r",
 			},
 			want: []zapcore.Entry{
-				{Level: zap.InfoLevel, Message: "foo"},
+				// \r resets buffer without logging, only final content after Close
 				{Level: zap.InfoLevel, Message: "bar"},
 			},
 		},
@@ -152,8 +152,7 @@ func TestWriter(t *testing.T) {
 				"progress: 10%\rprogress: 25%\rprogress: 50%\r",
 			},
 			want: []zapcore.Entry{
-				{Level: zap.InfoLevel, Message: "progress: 10%"},
-				{Level: zap.InfoLevel, Message: "progress: 25%"},
+				// \r resets buffer without logging, only final content after Close
 				{Level: zap.InfoLevel, Message: "progress: 50%"},
 			},
 		},
@@ -164,8 +163,8 @@ func TestWriter(t *testing.T) {
 			},
 			want: []zapcore.Entry{
 				{Level: zap.InfoLevel, Message: "foo"},
-				{Level: zap.InfoLevel, Message: "bar"},
-				{Level: zap.InfoLevel, Message: ""},
+				// bar\r - \r resets, no log
+				// \r - buffer already empty, no effect
 				{Level: zap.InfoLevel, Message: "baz"},
 				{Level: zap.InfoLevel, Message: "qux"},
 			},
@@ -179,7 +178,7 @@ func TestWriter(t *testing.T) {
 				"\n",
 			},
 			want: []zapcore.Entry{
-				{Level: zap.InfoLevel, Message: "foobar"},
+				// "foobar" is reset by \r, only "qux" is logged on \n
 				{Level: zap.InfoLevel, Message: "qux"},
 			},
 		},
@@ -204,8 +203,7 @@ func TestWriter(t *testing.T) {
 				"remote: Compressing objects\r\n",
 			},
 			want: []zapcore.Entry{
-				{Level: zap.InfoLevel, Message: "remote: Counting objects: 10%, done."},
-				{Level: zap.InfoLevel, Message: "remote: Counting objects: 20%, done."},
+				// Bare \r resets, only \r\n triggers log
 				{Level: zap.InfoLevel, Message: "remote: Counting objects: 100%, done."},
 				{Level: zap.InfoLevel, Message: "remote: Compressing objects"},
 			},

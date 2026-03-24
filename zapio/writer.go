@@ -60,6 +60,11 @@ type Writer struct {
 	Level zapcore.Level
 
 	buff bytes.Buffer
+
+	// lastWasBareCR indicates the last separator was a bare \r (not \r\n).
+	// This is used to implement progress bar style output where \r resets
+	// the cursor without logging.
+	lastWasBareCR bool
 }
 
 var (
@@ -90,14 +95,19 @@ func (w *Writer) Write(bs []byte) (n int, err error) {
 // unconsumed bytes.
 //
 // It handles both newlines (\n) and carriage returns (\r):
-// - \n splits the line
-// - \r splits the line (useful for progress indicators)
-// - \r\n is treated as a single separator (Windows line endings)
+// - \n splits the line and flushes it as a log entry
+// - \r\n is treated as a single line break (Windows line end)
+// - \r alone resets the buffer without flushing (for progress bars)
 func (w *Writer) writeLine(line []byte) (remaining []byte) {
 	// Find the first occurrence of either \n or \r.
 	sepIdx := bytes.IndexAny(line, "\r\n")
 	if sepIdx < 0 {
 		// If there are no newlines or carriage returns, buffer the entire string.
+		if w.lastWasBareCR && w.buff.Len() > 0 {
+			// If we had a bare \r in a previous Write, reset buffer before appending.
+			w.buff.Reset()
+			w.lastWasBareCR = false
+		}
 		w.buff.Write(line)
 		return nil
 	}
@@ -108,20 +118,58 @@ func (w *Writer) writeLine(line []byte) (remaining []byte) {
 		sepLen = 2
 	}
 
-	// Split on the separator, buffer and flush the left.
+	// Save the separator character before splitting.
+	sepChar := line[sepIdx]
+
+	// Split on the separator.
 	line, remaining = line[:sepIdx], line[sepIdx+sepLen:]
+
+	// If the separator is a bare \r (not followed by \n), and there's more content
+	// after it in this write call, we should discard the content before it (progress bar).
+	if sepChar == '\r' && sepLen == 1 && len(remaining) > 0 {
+		if w.lastWasBareCR && w.buff.Len() > 0 {
+			w.buff.Reset()
+			w.lastWasBareCR = false
+		}
+		// Write content before \r, then discard it (cursor returns to start of line)
+		w.buff.Write(line)
+		w.buff.Reset()
+		w.lastWasBareCR = true
+		return remaining
+	}
+
+	// Clear any pending CR reset for \n or \r\n
+	if sepChar == '\n' {
+		w.lastWasBareCR = false
+	}
+
+	// For trailing bare \r (no remaining content within this call), buffer the content
+	if sepChar == '\r' && sepLen == 1 {
+		if w.lastWasBareCR && w.buff.Len() > 0 {
+			w.buff.Reset()
+			w.lastWasBareCR = false
+		}
+		w.buff.Write(line)
+		// Don't log - cursor stays at this position for possible overwrite
+		w.lastWasBareCR = true
+		return remaining
+	}
+
+	// Handle \n or \r\n
+	if w.lastWasBareCR && w.buff.Len() > 0 {
+		w.buff.Reset()
+		w.lastWasBareCR = false
+	}
 
 	// Fast path: if we don't have a partial message from a previous write
 	// in the buffer, skip the buffer and log directly.
 	if w.buff.Len() == 0 {
 		w.log(line)
-		return remaining
+	} else {
+		w.buff.Write(line)
+		// Log empty messages to preserve information like "foo\n\nbar".
+		w.flush(true /* allowEmpty */)
 	}
-
-	w.buff.Write(line)
-
-	// Log empty messages to preserve information like "foo\n\nbar".
-	w.flush(true /* allowEmpty */)
 
 	return remaining
 }
