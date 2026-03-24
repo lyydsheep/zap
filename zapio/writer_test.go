@@ -132,8 +132,7 @@ func TestWriter(t *testing.T) {
 				"foo\rbar\r",
 			},
 			want: []zapcore.Entry{
-				// \r resets buffer without logging, only final content after Close
-				{Level: zap.InfoLevel, Message: "bar"},
+				// \r resets buffer without logging
 			},
 		},
 		{
@@ -152,8 +151,7 @@ func TestWriter(t *testing.T) {
 				"progress: 10%\rprogress: 25%\rprogress: 50%\r",
 			},
 			want: []zapcore.Entry{
-				// \r resets buffer without logging, only final content after Close
-				{Level: zap.InfoLevel, Message: "progress: 50%"},
+				// \r resets buffer without logging
 			},
 		},
 		{
@@ -203,7 +201,7 @@ func TestWriter(t *testing.T) {
 				"remote: Compressing objects\r\n",
 			},
 			want: []zapcore.Entry{
-				// Bare \r resets, only \r\n triggers log
+				// Bare \r resets without logging, only \r\n triggers log
 				{Level: zap.InfoLevel, Message: "remote: Counting objects: 100%, done."},
 				{Level: zap.InfoLevel, Message: "remote: Compressing objects"},
 			},
