@@ -124,38 +124,16 @@ func (w *Writer) writeLine(line []byte) (remaining []byte) {
 	// Split on the separator.
 	line, remaining = line[:sepIdx], line[sepIdx+sepLen:]
 
-	// If the separator is a bare \r (not followed by \n), and there's more content
-	// after it in this write call, we should discard the content before it (progress bar).
-	if sepChar == '\r' && sepLen == 1 && len(remaining) > 0 {
-		if w.lastWasBareCR && w.buff.Len() > 0 {
-			w.buff.Reset()
-			w.lastWasBareCR = false
-		}
-		// Write content before \r, then discard it (cursor returns to start of line)
-		w.buff.Write(line)
-		w.buff.Reset()
-		w.lastWasBareCR = true
-		return remaining
-	}
-
-	// Clear any pending CR reset for \n or \r\n
-	if sepChar == '\n' {
-		w.lastWasBareCR = false
-	}
-
-	// For trailing bare \r (no remaining content within this call), buffer the content
+	// Handle bare \r (not part of \r\n) - reset buffer without logging
 	if sepChar == '\r' && sepLen == 1 {
-		if w.lastWasBareCR && w.buff.Len() > 0 {
-			w.buff.Reset()
-			w.lastWasBareCR = false
-		}
-		w.buff.Write(line)
-		// Don't log - cursor stays at this position for possible overwrite
-		w.lastWasBareCR = true
+		// Reset buffer for progress bar behavior (discard previous content)
+		w.buff.Reset()
+		w.lastWasBareCR = false
+		// Return remaining content for further processing
 		return remaining
 	}
 
-	// Handle \n or \r\n
+	// Handle \n or \r\n - flush the current line
 	if w.lastWasBareCR && w.buff.Len() > 0 {
 		w.buff.Reset()
 		w.lastWasBareCR = false
